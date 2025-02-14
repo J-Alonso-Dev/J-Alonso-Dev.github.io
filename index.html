@@ -26,23 +26,12 @@
             text-align: center;
             display: none;
         }
-        .joystick {
-            position: absolute;
-            bottom: 20px;
-            left: 20px;
-            width: 100px;
-            height: 100px;
-            background: rgba(255, 255, 255, 0.5);
-            border-radius: 50%;
-            display: none;
-        }
     </style>
 </head>
 <body>
     <div id="gameOverMessage" class="game-over" aria-live="polite">
         Fim do Jogo!<br />Score Final: 0
     </div>
-    <div class="joystick" id="joystick"></div>
     <script>
         document.addEventListener("DOMContentLoaded", () => {
             const config = {
@@ -67,7 +56,7 @@
             let collectSound, timeUpSound, backgroundMusic;
             let bg1, bg2; // Duas imagens de fundo
             let isTransitioning = false; // Controla a transição entre os fundos
-            let joystick; // Joystick virtual
+            let touchStartY = 0; // Posição inicial do toque/mouse
 
             function preload() {
                 this.load.image("player", "assets/images/player.png");
@@ -171,17 +160,19 @@
                 // Inicia a transição entre os fundos após 15 segundos
                 this.time.delayedCall(15000, startTransition, [], this);
 
-                // Adiciona o joystick virtual para dispositivos móveis
-                if (this.sys.game.device.os.android || this.sys.game.device.os.iOS) {
-                    document.getElementById("joystick").style.display = "block";
-                    joystick = this.plugins.get("rexVirtualJoystick").add(this, {
-                        x: 100,
-                        y: config.height - 100,
-                        radius: 50,
-                        base: this.add.circle(0, 0, 50, 0x888888),
-                        thumb: this.add.circle(0, 0, 25, 0xcccccc),
-                    });
-                }
+                // Controles de toque (mobile) e mouse (desktop)
+                this.input.on("pointerdown", (pointer) => {
+                    touchStartY = pointer.y;
+                });
+
+                this.input.on("pointermove", (pointer) => {
+                    if (pointer.isDown) {
+                        const deltaY = pointer.y - touchStartY;
+                        player.y += deltaY * 0.1; // Sensibilidade do movimento
+                        player.y = Phaser.Math.Clamp(player.y, 0, config.height); // Limita o movimento dentro da tela
+                        touchStartY = pointer.y;
+                    }
+                });
 
                 // Redimensiona o jogo quando a tela é redimensionada
                 window.addEventListener("resize", () => {
@@ -216,11 +207,6 @@
                 player.setPosition(width / 4, height / 2);
                 scoreText.setPosition(10, 10);
                 timer.setPosition(width - 150, 10);
-
-                // Reposiciona o joystick
-                if (joystick) {
-                    joystick.setPosition(100, height - 100);
-                }
             }
 
             function resizeBackground() {
@@ -244,22 +230,14 @@
                     bg2.tilePositionX += 50 * dt;
                 }
 
-                // Movimentação do player
-                let velocityY = 0;
-
-                // Controles do teclado (desktop)
+                // Movimentação do player (teclado)
                 if (cursors.up.isDown) {
-                    velocityY = -200;
+                    player.setVelocityY(-200);
                 } else if (cursors.down.isDown) {
-                    velocityY = 200;
+                    player.setVelocityY(200);
+                } else {
+                    player.setVelocityY(0);
                 }
-
-                // Controles do joystick (mobile)
-                if (joystick && joystick.force > 0) {
-                    velocityY = joystick.force * 200 * Math.sin(joystick.angle * (Math.PI / 180));
-                }
-
-                player.setVelocityY(velocityY);
             }
 
             function collectItem(player, item) {
