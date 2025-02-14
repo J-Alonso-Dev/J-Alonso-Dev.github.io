@@ -1,219 +1,331 @@
-<!DOCTYPE html>
+<<!DOCTYPE html>
 <html lang="pt-br">
-    <head>
-        <meta charset="UTF-8" />
-        <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-        <title>Jogo Acessível</title>
-        <script src="https://cdnjs.cloudflare.com/ajax/libs/phaser/3.55.2/phaser.min.js"></script>
-        <style>
-            body {
-                margin: 0;
-                overflow: hidden;
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Jogo Acessível</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/phaser/3.55.2/phaser.min.js"></script>
+    <style>
+        body {
+            margin: 0;
+            overflow: hidden;
+        }
+        canvas {
+            display: block;
+        }
+        .game-over {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            font-size: 32px;
+            color: white;
+            background: rgba(0, 0, 0, 0.8);
+            padding: 20px;
+            border-radius: 10px;
+            text-align: center;
+            display: none;
+        }
+    </style>
+</head>
+<body>
+    <div id="gameOverMessage" class="game-over" aria-live="polite">
+        Fim do Jogo!<br />Score Final: 0
+    </div>
+    <script>
+        document.addEventListener("DOMContentLoaded", () => {
+            const config = {
+                type: Phaser.AUTO,
+                width: window.innerWidth,
+                height: window.innerHeight,
+                backgroundColor: "#000",
+                physics: {
+                    default: "arcade",
+                    arcade: { gravity: { y: 0 }, debug: false },
+                },
+                scene: { preload, create, update },
+            };
+
+            const game = new Phaser.Game(config);
+            let player,
+                cursors,
+                score = 0,
+                scoreText,
+                timer,
+                timeLeft = 90;
+            let collectSound, timeUpSound, backgroundMusic;
+            let bg1, bg2; // Duas imagens de fundo
+            let isTransitioning = false; // Controla a transição entre os fundos
+
+            function preload() {
+                this.load.image("player", "assets/images/player.png");
+                this.load.image("item", "assets/images/item.png");
+                this.load.image("background1", "assets/images/background1.jpg");
+                this.load.image("background2", "assets/images/background2.jpg");
+
+                this.load.audio("collect", "assets/sounds/collect.mp3");
+                this.load.audio("timeUp", "assets/sounds/timeUp.mp3");
+                this.load.audio("bgMusic", "assets/sounds/background.mp3");
             }
-            canvas {
-                display: block;
-            }
-            .game-over {
-                position: absolute;
-                top: 50%;
-                left: 50%;
-                transform: translate(-50%, -50%);
-                font-size: 32px;
-                color: white;
-                background: rgba(0, 0, 0, 0.8);
-                padding: 20px;
-                border-radius: 10px;
-                text-align: center;
-                display: none;
-            }
-        </style>
-    </head>
-    <body>
-        <div id="gameOverMessage" class="game-over" aria-live="polite">
-            Fim do Jogo!<br />Score Final: 0
-        </div>
-        <script>
-            document.addEventListener("DOMContentLoaded", () => {
-                const config = {
-                    type: Phaser.AUTO,
-                    width: window.innerWidth,
-                    height: window.innerHeight,
-                    backgroundColor: "#000",
-                    physics: {
-                        default: "arcade",
-                        arcade: { gravity: { y: 0 }, debug: false },
-                    },
-                    scene: { preload, create, update },
-                };
 
-                const game = new Phaser.Game(config);
-                let player,
-                    cursors,
-                    score = 0,
-                    scoreText,
-                    timer,
-                    timeLeft = 30;
-                let collectSound, timeUpSound, backgroundMusic;
-                let bg;
+            function create() {
+                // Carrega as duas imagens de fundo e ajusta a escala
+                bg1 = this.add.tileSprite(0, 0, config.width, config.height, "background1").setOrigin(0, 0);
+                bg2 = this.add.tileSprite(0, 0, config.width, config.height, "background2").setOrigin(0, 0);
 
-                function preload() {
-                    this.load.image("player", "assets/images/player.png");
-                    this.load.image("item", "assets/images/item.png");
-                    this.load.image(
-                        "background",
-                        "assets/images/background.jpg"
-                    );
+                // Ajusta a escala dos fundos para cobrir a tela inteira
+                resizeBackground();
 
-                    this.load.audio("collect", "assets/sounds/collect.mp3");
-                    this.load.audio("timeUp", "assets/sounds/timeUp.mp3");
-                    this.load.audio("bgMusic", "assets/sounds/background.mp3");
-                }
+                // Inicialmente, bg2 está invisível
+                bg2.alpha = 0;
 
-                function create() {
-                    bg = this.add.image(0, 0, "background").setOrigin(0, 0);
-                    bg.setScale(
-                        Math.max(
-                            config.width / bg.width,
-                            config.height / bg.height
-                        )
-                    );
+                player = this.physics.add.sprite(config.width / 4, config.height / 2, "player").setCollideWorldBounds(true);
+                player.setScale(0.75);
+                player.setDepth(1);
 
-                    player = this.physics.add
-                        .sprite(config.width / 4, config.height / 2, "player")
-                        .setCollideWorldBounds(true);
-                    player.setScale(1.5);
-                    player.setDepth(1);
+                // Animação de piscar do player
+                this.tweens.add({
+                    targets: player,
+                    alpha: { from: 0.8, to: 1 },
+                    duration: 500,
+                    yoyo: true,
+                    repeat: -1,
+                });
 
-                    this.tweens.add({
-                        targets: player,
-                        alpha: { from: 0.8, to: 1 },
-                        duration: 500,
-                        yoyo: true,
-                        repeat: -1,
-                    });
+                // Controles do teclado
+                cursors = this.input.keyboard.createCursorKeys();
 
-                    cursors = this.input.keyboard.createCursorKeys();
+                // Sons
+                collectSound = this.sound.add("collect");
+                timeUpSound = this.sound.add("timeUp");
+                backgroundMusic = this.sound.add("bgMusic", {
+                    loop: true,
+                    volume: 0.5,
+                });
+                backgroundMusic.play();
 
-                    collectSound = this.sound.add("collect");
-                    timeUpSound = this.sound.add("timeUp");
-                    backgroundMusic = this.sound.add("bgMusic", {
-                        loop: true,
-                        volume: 0.5,
-                    });
-                    backgroundMusic.play();
+                // Texto do score e timer
+                scoreText = this.add.text(10, 10, "Score: 0", {
+                    fontSize: "24px",
+                    fill: "#fff",
+                    fontFamily: "Arial",
+                });
+                timer = this.add.text(config.width - 150, 10, `Time: ${timeLeft}`, { fontSize: "24px", fill: "#fff", fontFamily: "Arial" });
 
-                    scoreText = this.add.text(10, 10, "Score: 0", {
-                        fontSize: "24px",
-                        fill: "#fff",
-                        fontFamily: "Arial",
-                    });
-                    timer = this.add.text(
-                        config.width - 150,
-                        10,
-                        `Time: ${timeLeft}`,
-                        { fontSize: "24px", fill: "#fff", fontFamily: "Arial" }
-                    );
+                // Grupo de itens coletáveis
+                this.items = this.physics.add.group();
 
-                    this.items = this.physics.add.group();
-                    this.time.addEvent({
-                        delay: 5000,
-                        callback: spawnItems,
-                        callbackScope: this,
-                        loop: true,
-                    }); // Ajuste na frequência
+                // Spawn de itens a cada 2 segundos
+                this.time.addEvent({
+                    delay: 2000,
+                    callback: spawnItems,
+                    callbackScope: this,
+                    loop: true,
+                });
+                this.time.delayedCall(100, spawnItems, [], this);
 
-                    this.physics.add.overlap(
-                        player,
-                        this.items,
-                        collectItem,
-                        null,
-                        this
-                    );
-                    this.time.addEvent({
-                        delay: 1000,
-                        callback: updateTime,
-                        callbackScope: this,
-                        loop: true,
-                    });
+                // Colisão entre player e itens
+                this.physics.add.overlap(player, this.items, collectItem, null, this);
 
-                    this.input.keyboard.on("keydown-F", toggleFullscreen, this);
+                // Atualização do timer a cada segundo
+                this.time.addEvent({
+                    delay: 1000,
+                    callback: updateTime,
+                    callbackScope: this,
+                    loop: true,
+                });
 
-                    this.input.keyboard.on("keydown-ESC", () => {
-                        if (!this.scene.isPaused()) {
-                            this.scene.pause();
-                            document.getElementById(
-                                "gameOverMessage"
-                            ).style.display = "block";
-                            document.getElementById(
-                                "gameOverMessage"
-                            ).innerHTML = `Pausado.<br>Score Atual: ${score}`;
-                        } else {
-                            this.scene.resume();
-                            document.getElementById(
-                                "gameOverMessage"
-                            ).style.display = "none";
-                        }
-                    });
-                }
+                // Tecla F para tela cheia
+                this.input.keyboard.on("keydown-F", toggleFullscreen, this);
 
-                function toggleFullscreen() {
-                    if (game.scale.isFullscreen) {
-                        game.scale.stopFullscreen();
-                    } else {
-                        game.scale.startFullscreen();
-                    }
-                }
-
-                function update() {
-                    if (cursors.up.isDown) {
-                        player.setVelocityY(-200);
-                    } else if (cursors.down.isDown) {
-                        player.setVelocityY(200);
-                    } else {
-                        player.setVelocityY(0);
-                    }
-                }
-
-                function collectItem(player, item) {
-                    item.disableBody(true, true);
-                    collectSound.play();
-                    score += 10;
-                    scoreText.setText(`Score: ${score}`);
-                }
-
-                function updateTime() {
-                    timeLeft--;
-                    timer.setText(`Time: ${timeLeft}`);
-                    if (timeLeft <= 0) {
-                        timeUpSound.play();
-                        backgroundMusic.stop();
+                // Tecla ESC para pausar/despausar
+                this.input.keyboard.on("keydown-ESC", () => {
+                    if (!this.scene.isPaused()) {
                         this.scene.pause();
-                        document.getElementById(
-                            "gameOverMessage"
-                        ).style.display = "block";
-                        document.getElementById(
-                            "gameOverMessage"
-                        ).innerHTML = `Fim do Jogo!<br>Score Final: ${score}`;
+                        document.getElementById("gameOverMessage").style.display = "block";
+                        document.getElementById("gameOverMessage").innerHTML = `Pausado.<br>Score Atual: ${score}`;
+                    } else {
+                        this.scene.resume();
+                        document.getElementById("gameOverMessage").style.display = "none";
                     }
+                });
+
+                // Tecla R para reiniciar o jogo
+                this.input.keyboard.on("keydown-R", () => {
+                    this.scene.restart();
+                    document.getElementById("gameOverMessage").style.display = "none";
+                });
+
+                // Inicia a transição entre os fundos após 15 segundos
+                this.time.delayedCall(15000, startTransition, [], this);
+
+                // Redimensiona o jogo quando a tela é redimensionada
+                window.addEventListener("resize", () => {
+                    if (game.scale.isFullscreen) {
+                        resizeGame();
+                    }
+                });
+            }
+
+            function toggleFullscreen() {
+                if (game.scale.isFullscreen) {
+                    game.scale.stopFullscreen();
+                } else {
+                    game.scale.startFullscreen();
                 }
 
-                function spawnItems() {
-                    let y = Phaser.Math.Between(100, config.height - 100);
-                    let spacing = 100; // Aumento no espaçamento entre itens
-                    let startX = config.width;
+                // Redimensiona o jogo após entrar/sair do modo de tela cheia
+                resizeGame();
+            }
 
-                    for (let i = 0; i < 5; i++) {
-                        // Redução do número de itens por linha
-                        let item = this.items.create(
-                            startX + i * spacing,
-                            y,
-                            "item"
-                        );
-                        item.setVelocityX(-100);
-                        item.setDepth(1);
-                    }
+            function resizeGame() {
+                const width = window.innerWidth;
+                const height = window.innerHeight;
+
+                // Redimensiona o canvas
+                game.scale.resize(width, height);
+
+                // Redimensiona os fundos
+                resizeBackground();
+
+                // Reposiciona o player e outros elementos
+                player.setPosition(width / 4, height / 2);
+                scoreText.setPosition(10, 10);
+                timer.setPosition(width - 150, 10);
+            }
+
+            function resizeBackground() {
+                const width = window.innerWidth;
+                const height = window.innerHeight;
+
+                // Ajusta a escala dos fundos para cobrir a tela inteira
+                const scaleX = width / bg1.width;
+                const scaleY = height / bg1.height;
+                const scale = Math.max(scaleX, scaleY);
+                bg1.setScale(scale);
+                bg2.setScale(scale);
+            }
+
+            function update(time, delta) {
+                let dt = delta / 1000;
+
+                // Movimentação dos fundos para a direita (sensação de movimento para frente)
+                bg1.tilePositionX += 50 * dt;
+                if (bg2.alpha > 0) {
+                    bg2.tilePositionX += 50 * dt;
                 }
-            });
-        </script>
-    </body>
+
+                // Movimentação do player
+                if (cursors.up.isDown) {
+                    player.setVelocityY(-200);
+                } else if (cursors.down.isDown) {
+                    player.setVelocityY(200);
+                } else {
+                    player.setVelocityY(0);
+                }
+            }
+
+            function collectItem(player, item) {
+                item.disableBody(true, true);
+                collectSound.play();
+                score += 10;
+                scoreText.setText(`Score: ${score}`);
+
+                // Efeito de partículas ao coletar item
+                let particles = this.add.particles("item");
+                let emitter = particles.createEmitter({
+                    speed: 100,
+                    scale: { start: 1, end: 0 },
+                    blendMode: "ADD",
+                });
+                emitter.explode(10, item.x, item.y);
+            }
+
+            function updateTime() {
+                timeLeft--;
+                timer.setText(`Time: ${timeLeft}`);
+                if (timeLeft <= 0) {
+                    timeUpSound.play();
+                    backgroundMusic.stop();
+                    this.scene.pause();
+                    document.getElementById("gameOverMessage").style.display = "block";
+                    document.getElementById("gameOverMessage").innerHTML = `Fim do Jogo!<br>Score Final: ${score}`;
+                }
+            }
+
+            function spawnItems() {
+                let y = Phaser.Math.Between(100, config.height - 100);
+                let spacing = 100;
+                let startX = config.width;
+
+                for (let i = 0; i < 5; i++) {
+                    let item = this.items.create(startX + i * spacing, y, "item");
+                    item.setScale(0.5);
+                    item.setVelocityX(-100);
+                    item.setDepth(1);
+                }
+            }
+
+            function startTransition() {
+                if (isTransitioning) return; // Evita múltiplas transições simultâneas
+                isTransitioning = true;
+
+                // Fade out do bg1 e fade in do bg2
+                this.tweens.add({
+                    targets: bg1,
+                    alpha: 0,
+                    duration: 2000, // Duração do fade
+                    ease: "Linear",
+                });
+
+                this.tweens.add({
+                    targets: bg2,
+                    alpha: 1,
+                    duration: 2000, // Duração do fade
+                    ease: "Linear",
+                    onComplete: () => {
+                        // Após a transição, bg1 volta ao início e fica invisível
+                        bg1.tilePositionX = 0;
+                        bg1.alpha = 0;
+                        bg2.alpha = 1;
+                        isTransitioning = false;
+
+                        // Agenda a próxima transição (de bg2 para bg1)
+                        this.time.delayedCall(15000, startReverseTransition, [], this);
+                    },
+                });
+            }
+
+            function startReverseTransition() {
+                if (isTransitioning) return; // Evita múltiplas transições simultâneas
+                isTransitioning = true;
+
+                // Fade out do bg2 e fade in do bg1
+                this.tweens.add({
+                    targets: bg2,
+                    alpha: 0,
+                    duration: 2000, // Duração do fade
+                    ease: "Linear",
+                });
+
+                this.tweens.add({
+                    targets: bg1,
+                    alpha: 1,
+                    duration: 2000, // Duração do fade
+                    ease: "Linear",
+                    onComplete: () => {
+                        // Após a transição, bg2 volta ao início e fica invisível
+                        bg2.tilePositionX = 0;
+                        bg2.alpha = 0;
+                        bg1.alpha = 1;
+                        isTransitioning = false;
+
+                        // Agenda a próxima transição (de bg1 para bg2)
+                        this.time.delayedCall(15000, startTransition, [], this);
+                    },
+                });
+            }
+        });
+    </script>
+</body>
 </html>
